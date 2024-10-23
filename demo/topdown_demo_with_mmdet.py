@@ -1,16 +1,11 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import logging
-import mimetypes
 import os
-import time
 from argparse import ArgumentParser
 
-import cv2
 import json_tricks as json
 import mmcv
 import mmengine
 import numpy as np
-from mmengine.logging import print_log
 
 from mmpose.apis import inference_topdown
 from mmpose.apis import init_model as init_pose_estimator
@@ -163,18 +158,8 @@ def main():
     assert args.det_config is not None
     assert args.det_checkpoint is not None
 
-    output_file = None
     if args.output_root:
         mmengine.mkdir_or_exist(args.output_root)
-        output_file = os.path.join(args.output_root,
-                                   os.path.basename(args.input))
-        if args.input == 'webcam':
-            output_file += '.mp4'
-
-    if args.save_predictions:
-        assert args.output_root != ''
-        args.pred_save_path = f'{args.output_root}/results_' \
-            f'{os.path.splitext(os.path.basename(args.input))[0]}.json'
 
     # build detector
     detector = init_detector(
@@ -199,103 +184,33 @@ def main():
     visualizer.set_dataset_meta(
         pose_estimator.dataset_meta, skeleton_style=args.skeleton_style)
 
-    if args.input == 'webcam':
-        input_type = 'webcam'
-    else:
-        input_type = mimetypes.guess_type(args.input)[0].split('/')[0]
-
-    if input_type == 'image':
-
+    from glob import glob
+    import os.path as osp
+    img_path_list = glob(osp.join(args.input, '*.jpg')) + glob(osp.join(args.input, '*.png'))
+    for img_path in img_path_list:
         # inference
-        pred_instances = process_one_image(args, args.input, detector,
+        pred_instances = process_one_image(args, img_path, detector,
                                            pose_estimator, visualizer)
 
         if args.save_predictions:
             pred_instances_list = split_instances(pred_instances)
 
-        if output_file:
-            img_vis = visualizer.get_image()
-            mmcv.imwrite(mmcv.rgb2bgr(img_vis), output_file)
+        output_file = os.path.join(args.output_root, os.path.basename(img_path))
+        img_vis = visualizer.get_image()
+        mmcv.imwrite(mmcv.rgb2bgr(img_vis), output_file)
 
-    elif input_type in ['webcam', 'video']:
-
-        if args.input == 'webcam':
-            cap = cv2.VideoCapture(0)
-        else:
-            cap = cv2.VideoCapture(args.input)
-
-        video_writer = None
-        pred_instances_list = []
-        frame_idx = 0
-
-        while cap.isOpened():
-            success, frame = cap.read()
-            frame_idx += 1
-
-            if not success:
-                break
-
-            # topdown pose estimation
-            pred_instances = process_one_image(args, frame, detector,
-                                               pose_estimator, visualizer,
-                                               0.001)
-
-            if args.save_predictions:
-                # save prediction results
-                pred_instances_list.append(
+        if args.save_predictions:
+            assert args.output_root != ''
+            args.pred_save_path = f'{args.output_root}/results_' \
+                f'{os.path.splitext(os.path.basename(img_path))[0]}.json'
+            with open(args.pred_save_path, 'w') as f:
+                json.dump(
                     dict(
-                        frame_id=frame_idx,
-                        instances=split_instances(pred_instances)))
-
-            # output videos
-            if output_file:
-                frame_vis = visualizer.get_image()
-
-                if video_writer is None:
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    # the size of the image with visualization may vary
-                    # depending on the presence of heatmaps
-                    video_writer = cv2.VideoWriter(
-                        output_file,
-                        fourcc,
-                        25,  # saved fps
-                        (frame_vis.shape[1], frame_vis.shape[0]))
-
-                video_writer.write(mmcv.rgb2bgr(frame_vis))
-
-            if args.show:
-                # press ESC to exit
-                if cv2.waitKey(5) & 0xFF == 27:
-                    break
-
-                time.sleep(args.show_interval)
-
-        if video_writer:
-            video_writer.release()
-
-        cap.release()
-
-    else:
-        args.save_predictions = False
-        raise ValueError(
-            f'file {os.path.basename(args.input)} has invalid format.')
-
-    if args.save_predictions:
-        with open(args.pred_save_path, 'w') as f:
-            json.dump(
-                dict(
-                    meta_info=pose_estimator.dataset_meta,
-                    instance_info=pred_instances_list),
-                f,
-                indent='\t')
-        print(f'predictions have been saved at {args.pred_save_path}')
-
-    if output_file:
-        input_type = input_type.replace('webcam', 'video')
-        print_log(
-            f'the output {input_type} has been saved at {output_file}',
-            logger='current',
-            level=logging.INFO)
+                        meta_info=pose_estimator.dataset_meta,
+                        instance_info=pred_instances_list),
+                    f,
+                    indent='\t')
+            print(f'predictions have been saved at {args.pred_save_path}')
 
 
 if __name__ == '__main__':
