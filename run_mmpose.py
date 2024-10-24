@@ -29,11 +29,11 @@ os.system(cmd)
 
 # move predictions to the root path
 os.makedirs(osp.join(dataset_path, 'keypoints_whole_body'), exist_ok=True)
-img_path_list = glob(osp.join(dataset_path, 'images', '*.png')) + glob(osp.join(dataset_path, 'images', '*.jpg'))
-frame_idx_list = sorted([int(x.split('/')[-1][:-4]) for x in img_path_list])
+img_path_list = sorted(glob(osp.join(dataset_path, 'images', '*.png')) + glob(osp.join(dataset_path, 'images', '*.jpg')))
+frame_idx_list = [int(x.split('/')[-1][:-4]) for x in img_path_list]
 output_path_list = glob(osp.join(output_root, '*.json'))
 for output_path in output_path_list:
-    frame_idx = int(output_path.split('/')[-1].split('results_')[1][:-5])
+    frame_idx = output_path.split('/')[-1].split('results_')[1][:-5]
     with open(output_path) as f:
         out = json.load(f)
 
@@ -44,17 +44,22 @@ for output_path in output_path_list:
         kpt = np.concatenate((xy, score),1) # x, y, score
         if (kpt_save is None) or (kpt_save[:,2].mean() < kpt[:,2].mean()):
             kpt_save = kpt
-    with open(osp.join(dataset_path, 'keypoints_whole_body', str(frame_idx) + '.json'), 'w') as f:
+    with open(osp.join(dataset_path, 'keypoints_whole_body', frame_idx + '.json'), 'w') as f:
         json.dump(kpt_save.tolist(), f)
 
 # add original image and frame index to the video
-output_path_list = glob(osp.join(output_root, '*.png'))
+output_path_list = glob(osp.join(output_root, '*.png')) + glob(osp.join(output_root, '*.jpg'))
+output_path_list = sorted(output_path_list)
 img_height, img_width = cv2.imread(output_path_list[0]).shape[:2]
 video_save = cv2.VideoWriter(osp.join(dataset_path, 'keypoints_whole_body.mp4'), cv2.VideoWriter_fourcc(*'mp4v'), 30, (img_width*2, img_height)) 
-for frame_idx in frame_idx_list:
-    img = cv2.imread(osp.join(dataset_path, 'frames', frame_idx + '.png'))
-    output = cv2.imread(osp.join(output_root, frame_idx + '.png'))
+for i, output_path in enumerate(output_path_list):
+    frame_idx = output_path.split('/')[-1][:-4]
+    input_img_path = img_path_list[i]
+    img = cv2.imread(input_img_path)
+    output = cv2.imread(output_path)
     vis = np.concatenate((img, output),1)
     vis = cv2.putText(vis, frame_idx, (int(img_width*0.1), int(img_height*0.1)), cv2.FONT_HERSHEY_PLAIN, 2.0, (0,0,255), 3)
     video_save.write(vis)
 video_save.release()
+
+os.system('rm -rf ' + output_root)

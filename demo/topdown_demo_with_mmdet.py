@@ -187,6 +187,7 @@ def main():
     from glob import glob
     import os.path as osp
     img_path_list = glob(osp.join(args.input, '*.jpg')) + glob(osp.join(args.input, '*.png'))
+    img_path_list = sorted(img_path_list)
     for img_path in img_path_list:
         # inference
         pred_instances = process_one_image(args, img_path, detector,
